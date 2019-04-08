@@ -2,10 +2,12 @@
 
 Polly is a .NET resilience and transient-fault-handling library that allows developers to express policies such as Retry, Circuit Breaker, Timeout, Bulkhead Isolation, and Fallback in a fluent and thread-safe manner.  
 
-Polly targets .NET 4.0, .NET 4.5 and .NET Standard 1.1 ([coverage](https://github.com/dotnet/standard/blob/master/docs/versions.md): .NET Core, Mono, Xamarin.iOS, Xamarin.Android, UWP, WP8.1+).
+Polly targets .NET Standard 1.1 ([coverage](https://docs.microsoft.com/en-us/dotnet/standard/net-standard#net-implementation-support): .NET Framework 4.5-4.6.1, .NET Core 1.0, Mono, Xamarin, UWP, WP8.1+) and .NET Standard 2.0+  ([coverage](https://docs.microsoft.com/en-us/dotnet/standard/net-standard#net-implementation-support): .NET Framework 4.6.1, .NET Core 2.0+, and later Mono, Xamarin and UWP targets).
+
+For versions supporting earlier targets such as .NET4.0 and .NET3.5, see the [supported targets](https://github.com/App-vNext/Polly/wiki/Supported-targets) grid.
 
 [<img align="right" src="https://github.com/dotnet/swag/raw/master/logo/dotnetfoundation_v4_small.png" width="100" />](https://www.dotnetfoundation.org/)
-We are now a member of the [.NET Foundation](https://www.dotnetfoundation.org/about)!
+We are a member of the [.NET Foundation](https://www.dotnetfoundation.org/about)!
 
 **Keep up to date with new feature announcements, tips & tricks, and other news through [www.thepollyproject.org](http://www.thepollyproject.org)**
 
@@ -16,15 +18,6 @@ We are now a member of the [.NET Foundation](https://www.dotnetfoundation.org/ab
 # Installing via NuGet
 
     Install-Package Polly
-
-You can install the Strongly Named version via: 
-
-    Install-Package Polly-Signed
-
-.NET4.0 support is provided via the packages:
-
-    Install-Package Polly.Net40Async
-    Install-Package Polly.Net40Async-Signed
 
 
 # Resilience policies
@@ -43,13 +36,29 @@ Polly offers multiple resilience policies:
 
 In addition to the detailed pages on each policy, an [introduction to the role of each policy in resilience engineering](https://github.com/App-vNext/Polly/wiki/Transient-fault-handling-and-proactive-resilience-engineering)  is also provided in the wiki.
 
-# Usage &ndash; fault-handling policies
+### Using Polly with HttpClient factory from ASPNET Core 2.1
+
+For using Polly with  HttpClient factory from ASPNET Core 2.1, see our [detailed wiki page](https://github.com/App-vNext/Polly/wiki/Polly-and-HttpClientFactory), then come back here or [explore the wiki](https://github.com/App-vNext/Polly/wiki) to learn more about the operation of each policy.
+
+### Release notes
+
++ The [change log](https://github.com/App-vNext/Polly/blob/master/CHANGELOG.md) describes changes by release.
++ We tag Pull Requests and Issues with [milestones](https://github.com/App-vNext/Polly/milestones) which match to nuget package release numbers.
++ Breaking changes are called out in the wiki ([v7](https://github.com/App-vNext/Polly/wiki/Polly-v7-breaking-changes) ; [v6](https://github.com/App-vNext/Polly/wiki/Polly-v6-breaking-changes)) with simple notes on any necessary steps to upgrade.
+
+### Supported targets
+
+For details of supported compilation targets by version, see the [supported targets](https://github.com/App-vNext/Polly/wiki/Supported-targets) grid.
+
+### Role of the readme and the wiki
+
+This ReadMe aims to give a quick overview of all Polly features - including enough to get you started with any policy.  For deeper detail on any policy, and many other aspects of Polly, be sure also to check out the [wiki documentation](https://github.com/App-vNext/Polly/wiki).
+
+# Usage &ndash; fault-handling, reactive policies
 
 Fault-handling policies handle specific exceptions thrown by, or results returned by, the delegates you execute through the policy.
 
 ## Step 1 : Specify the  exceptions/faults you want the policy to handle 
-
-### (for fault-handling policies:  Retry family, CircuitBreaker family and Fallback)
 
 ```csharp
 // Single exception type
@@ -71,6 +80,7 @@ Policy
   .Or<ArgumentException>(ex => ex.ParamName == "example")
 
 // Inner exceptions of ordinary exceptions or AggregateException, with or without conditions
+// (HandleInner matches exceptions at both the top-level and inner exceptions)
 Policy
   .HandleInner<HttpRequestException>()
   .OrInner<OperationCanceledException>(ex => ex.CancellationToken != myToken)
@@ -88,12 +98,12 @@ Policy
 // Handle multiple return values 
 Policy
   .HandleResult<HttpResponseMessage>(r => r.StatusCode == HttpStatusCode.InternalServerError)
-  .OrResult<HttpResponseMessage>(r => r.StatusCode == HttpStatusCode.BadGateway)
+  .OrResult(r => r.StatusCode == HttpStatusCode.BadGateway)
 
 // Handle primitive return values (implied use of .Equals())
 Policy
   .HandleResult<HttpStatusCode>(HttpStatusCode.InternalServerError)
-  .OrResult<HttpStatusCode>(HttpStatusCode.BadGateway)
+  .OrResult(HttpStatusCode.BadGateway)
  
 // Handle both exceptions and return values in one policy
 HttpStatusCode[] httpStatusCodesWorthRetrying = {
@@ -103,7 +113,7 @@ HttpStatusCode[] httpStatusCodesWorthRetrying = {
    HttpStatusCode.ServiceUnavailable, // 503
    HttpStatusCode.GatewayTimeout // 504
 }; 
-HttpResponseMessage result = Policy
+HttpResponseMessage result = await Policy
   .Handle<HttpRequestException>()
   .OrResult<HttpResponseMessage>(r => httpStatusCodesWorthRetrying.Contains(r.StatusCode))
   .RetryAsync(...)
@@ -131,7 +141,7 @@ Policy
 // with the current exception and retry count
 Policy
     .Handle<SomeExceptionType>()
-    .Retry(3, (exception, retryCount) =>
+    .Retry(3, onRetry: (exception, retryCount) =>
     {
         // do something 
     });
@@ -141,7 +151,7 @@ Policy
 // provided to Execute()
 Policy
     .Handle<SomeExceptionType>()
-    .Retry(3, (exception, retryCount, context) =>
+    .Retry(3, onRetry: (exception, retryCount, context) =>
     {
         // do something 
     });
@@ -160,7 +170,7 @@ Policy
 // current exception
 Policy
   .Handle<SomeExceptionType>()
-  .RetryForever(exception =>
+  .RetryForever(onRetry: exception =>
   {
         // do something       
   });
@@ -169,7 +179,7 @@ Policy
 // current exception and context provided to Execute()
 Policy
   .Handle<SomeExceptionType>()
-  .RetryForever((exception, context) =>
+  .RetryForever(onRetry: (exception, context) =>
   {
         // do something       
   });
@@ -178,7 +188,8 @@ Policy
 ### Wait and retry 
 
 ```csharp
-// Retry, waiting a specified duration between each retry
+// Retry, waiting a specified duration between each retry. 
+// (The wait is imposed on catching the failure, before making the next try.)
 Policy
   .Handle<SomeExceptionType>()
   .WaitAndRetry(new[]
@@ -312,7 +323,9 @@ Policy
     });
 ```
 
-For more detail see: [Retry policy documentation](https://github.com/App-vNext/Polly/wiki/Retry) on wiki.
+If all retries fail, a retry policy rethrows the final exception back to the calling code.
+
+For more depth see also: [Retry policy documentation on wiki](https://github.com/App-vNext/Polly/wiki/Retry).
 
 ### Circuit Breaker
  
@@ -358,7 +371,12 @@ breaker.Isolate();
 breaker.Reset(); 
 
 ```
-For more detail see: [Circuit-Breaker documentation](https://github.com/App-vNext/Polly/wiki/Circuit-Breaker) on wiki.
+
+Circuit-breaker policies block exceptions by throwing `BrokenCircuitException` when the circuit is broken. See: [Circuit-Breaker documentation on wiki](https://github.com/App-vNext/Polly/wiki/Circuit-Breaker).
+
+Note that circuit-breaker policies [rethrow all exceptions](https://github.com/App-vNext/Polly/wiki/Circuit-Breaker#exception-handling), even handled ones. A circuit-breaker exists to measure faults and break the circuit when too many faults occur, but does not orchestrate retries.  Combine a circuit-breaker with a retry policy as needed. 
+
+
 
 ### Advanced Circuit Breaker 
 ```csharp
@@ -470,9 +488,9 @@ Policy
 
 The above examples show policy definition immediately followed by policy execution, for simplicity.  Policy definition and execution may just as often be separated in the codebase and application lifecycle.  You may choose for example to define policies on start-up, then provide them to point-of-use by dependency injection (perhaps using [`PolicyRegistry`](#policyregistry)).
 
-# Usage &ndash; general resilience policies
+# Usage &ndash; proactive policies
 
-The general resilience policies add resilience strategies that are not explicitly centred around handling faults which delegates may throw or return.
+The proactive policies add resilience strategies that not based on handling faults which delegates may throw or return.
 
 ## Step 1 : Configure
 
@@ -553,6 +571,8 @@ var response = await timeoutPolicy
       );
 ```
 
+Timeout policies throw `TimeoutRejectedException` when timeout occurs. 
+
 For more detail see: [Timeout policy documentation](https://github.com/App-vNext/Polly/wiki/Timeout) on wiki.
 
 ### Bulkhead
@@ -582,24 +602,27 @@ int freeQueueSlots     = bulkhead.QueueAvailableCount;
 
 ```
 
+Bulkhead policies throw `BulkheadRejectedException` if items are queued to the bulkhead when the bulkhead execution and queue are both full. 
+
 
 For more detail see: [Bulkhead policy documentation](https://github.com/App-vNext/Polly/wiki/Bulkhead) on wiki.
 
 ### Cache
 
 ```csharp
-// Define a cache Policy in the .NET Framework, using the Polly.Caching.MemoryCache nuget package.
-var memoryCacheProvider = new Polly.Caching.MemoryCache.MemoryCacheProvider(MemoryCache.Default);
+var memoryCache = new MemoryCache(new MemoryCacheOptions());
+var memoryCacheProvider = new MemoryCacheProvider(memoryCache);
 var cachePolicy = Policy.Cache(memoryCacheProvider, TimeSpan.FromMinutes(5));
+
+// For .NET Core DI examples see the CacheProviders linked to from https://github.com/App-vNext/Polly/wiki/Cache#working-with-cacheproviders :
+// - https://github.com/App-vNext/Polly.Caching.MemoryCache
+// - https://github.com/App-vNext/Polly.Caching.IDistributedCache 
 
 // Define a cache policy with absolute expiration at midnight tonight.
 var cachePolicy = Policy.Cache(memoryCacheProvider, new AbsoluteTtl(DateTimeOffset.Now.Date.AddDays(1));
 
 // Define a cache policy with sliding expiration: items remain valid for another 5 minutes each time the cache item is used.
 var cachePolicy = Policy.Cache(memoryCacheProvider, new SlidingTtl(TimeSpan.FromMinutes(5));
-
-// Execute through the cache as a read-through cache: check the cache first; if not found, execute underlying delegate and store the result in the cache. 
-TResult result = cachePolicy.Execute(() => getFoo(), new Context("FooKey")); // "FooKey" is the cache key used in this execution.
 
 // Define a cache Policy, and catch any cache provider errors for logging. 
 var cachePolicy = Policy.Cache(myCacheProvider, TimeSpan.FromMinutes(5), 
@@ -608,6 +631,10 @@ var cachePolicy = Policy.Cache(myCacheProvider, TimeSpan.FromMinutes(5),
    }
 );
 
+// Execute through the cache as a read-through cache: check the cache first; if not found, execute underlying delegate and store the result in the cache. 
+// The key to use for caching, for a particular execution, is specified by setting the OperationKey (before v6: ExecutionKey) on a Context instance passed to the execution. Use an overload of the form shown below (or a richer overload including the same elements).
+// Example: "FooKey" is the cache key that will be used in the below execution.
+TResult result = cachePolicy.Execute(context => getFoo(), new Context("FooKey"));
 
 ```
 
@@ -663,7 +690,7 @@ As for fault-handling policies [above](#step-3--execute-the-policy).
 Using the `ExecuteAndCapture(...)` methods you can capture the outcome of an execution: the methods return a `PolicyResult` instance which describes whether the outcome was a successful execution or a fault.
 
 ```csharp
-var policyResult = Policy
+var policyResult = await Policy
               .Handle<HttpRequestException>()
               .RetryAsync()
               .ExecuteAndCaptureAsync(() => DoSomethingAsync());
@@ -688,7 +715,7 @@ HttpStatusCode[] httpStatusCodesWorthRetrying = {
    HttpStatusCode.ServiceUnavailable, // 503
    HttpStatusCode.GatewayTimeout // 504
 }; 
-HttpResponseMessage result = Policy
+HttpResponseMessage result = await Policy
   .Handle<HttpRequestException>()
   .OrResult<HttpResponseMessage>(r => httpStatusCodesWorthRetrying.Contains(r.StatusCode))
   .RetryAsync(...)
@@ -775,7 +802,7 @@ var policy = Policy
     .WithPolicyKey("MyDataAccessPolicy");
 
 int id = ... // customer id from somewhere
-var customerDetails = policy.Execute(() => GetCustomer(id), 
+var customerDetails = policy.Execute(context => GetCustomer(id), 
     new Context("GetCustomerDetails", new Dictionary<string, object>() {{"Type","Customer"},{"Id",id}}
     ));
 ```
@@ -912,27 +939,14 @@ This allows collections of similar kinds of policy to be treated as one - for ex
 
 For more detail see: [Polly and interfaces](https://github.com/App-vNext/Polly/wiki/Polly-and-interfaces) on wiki.
 
-
-# .NET4.0 support 
-
-The .NET4.0 package uses `Microsoft.Bcl.Async` to add async support.  To minimise  dependencies on the main Polly nuget package, the .NET4.0 version is available as separate Nuget packages `Polly.Net40Async` and `Polly.Net40Async-signed`.
-
-# .NET3.5 support 
-
-The last version of Polly to support .NET3.5 is [v4.3.0](https://www.nuget.org/packages/Polly/4.3.0). This includes all of the 4.x features, as it was the last version before v5.0. This package may be installed via the NuGet package manager by specifying its version: `Install-Package Polly -Version 4.3.0`.
-
-# Release notes
-
-For details of changes by release see the [change log](https://github.com/App-vNext/Polly/blob/master/CHANGELOG.md).  We also tag relevant Pull Requests and Issues with [milestones](https://github.com/App-vNext/Polly/milestones), which match to nuget package release numbers.
-
 # 3rd Party Libraries and Contributions
 
 * [Fluent Assertions](https://github.com/fluentassertions/fluentassertions) - A set of .NET extension methods that allow you to more naturally specify the expected outcome of a TDD or BDD-style test | [Apache License 2.0 (Apache)](https://github.com/dennisdoomen/fluentassertions/blob/develop/LICENSE)
 * [xUnit.net](https://github.com/xunit/xunit) - Free, open source, community-focused unit testing tool for the .NET Framework | [Apache License 2.0 (Apache)](https://github.com/xunit/xunit/blob/master/license.txt)
 * [Ian Griffith's TimedLock](http://www.interact-sw.co.uk/iangblog/2004/04/26/yetmoretimedlocking)
-* [Steven van Deursen's ReadOnlyDictionary](http://www.cuttingedge.it/blogs/steven/pivot/entry.php?id=29) (until v5.0.6)
-* [Stephen Cleary's AsyncEx library](https://github.com/StephenCleary/AsyncEx) for AsyncSemaphore (supports BulkheadAsync policy for .NET4.0 only) | [MIT license](https://github.com/StephenCleary/AsyncEx/blob/master/LICENSE)
-* [@theraot](https://github.com/theraot)'s [ExceptionDispatchInfo implementation for .NET4.0](https://stackoverflow.com/a/31226509/) (supports Timeout policy for .NET4.0 only) including also a contribution by [@migueldeicaza](https://github.com/migueldeicaza) | Licensed under and distributed under [Creative Commons Attribution Share Alike license](https://creativecommons.org/licenses/by-sa/3.0/) per [StackExchange Terms of Service](https://stackexchange.com/legal)
+* [Steven van Deursen's ReadOnlyDictionary](http://www.cuttingedge.it/blogs/steven/pivot/entry.php?id=29) (until Polly v5.0.6)
+* [Stephen Cleary's AsyncEx library](https://github.com/StephenCleary/AsyncEx) for AsyncSemaphore (supports BulkheadAsync policy for .NET4.0 only) (until Polly v5.9.0) | [MIT license](https://github.com/StephenCleary/AsyncEx/blob/master/LICENSE)
+* [@theraot](https://github.com/theraot)'s [ExceptionDispatchInfo implementation for .NET4.0](https://stackoverflow.com/a/31226509/) (supports Timeout policy for .NET4.0 only) (until Polly v5.9.0) including also a contribution by [@migueldeicaza](https://github.com/migueldeicaza) | Licensed under and distributed under [Creative Commons Attribution Share Alike license](https://creativecommons.org/licenses/by-sa/3.0/) per [StackExchange Terms of Service](https://stackexchange.com/legal)
 * Build powered by [Cake](http://cakebuild.net/) and [GitVersionTask](https://github.com/GitTools/GitVersion).
 
 # Acknowledgements
@@ -988,14 +1002,31 @@ For details of changes by release see the [change log](https://github.com/App-vN
 * [@awarrenlove](https://github.com/awarrenlove) - Add ability to calculate cache Ttl based on item to cache.
 * [@erickhouse](https://github.com/erickhouse) - Add a new onBreak overload that provides the prior state on a transition to an open state.
 * [@benagain](https://github.com/benagain) - Bug fix: RelativeTtl in CachePolicy now always returns a ttl relative to time item is cached.
+* [@urig](https://github.com/urig) - Allow TimeoutPolicy to be configured with Timeout.InfiniteTimeSpan.
+* [@reisenberger](https://github.com/reisenberger) - Integration with [IHttpClientFactory](https://github.com/aspnet/HttpClientFactory/) for ASPNET Core 2.1.
+* [@freakazoid182](https://github.com/Freakazoid182) - WaitAnd/RetryForever overloads where onRetry takes the retry number as a parameter.
+* [@dustyhoppe](https://github.com/dustyhoppe) - Overloads where onTimeout takes thrown exception as a parameter.
+* [@flin-zap](https://github.com/flin-zap) - Catch missing async continuation control.
+* [@reisenberger](https://github.com/reisenberger) - Clarify separation of sync and async policies.
+* [@reisenberger](https://github.com/reisenberger) - Enable extensibility by custom policies hosted external to Polly.
+* [@seanfarrow](https://github.com/SeanFarrow) - Enable collection initialization syntax for PolicyRegistry.
+* [@moerwald](https://github.com/moerwald) - Code clean-ups, usage of more concise C# members.
+* [@cmeeren](https://github.com/cmeeren) - Enable cache policies to cache values of default(TResult).
+* [@aprooks](https://github.com/aprooks) - Build script tweaks for Mac and mono.
+* [@kesmy](https://github.com/Kesmy) - Add Soucelink support, clean up cake build.
+
 
 # Sample Projects
 
-[Polly-Samples](https://github.com/App-vNext/Polly-Samples) contains practical examples for using various implementations of Polly. Please feel free to contribute to the Polly-Samples repository in order to assist others who are either learning Polly for the first time, or are seeking advanced examples and novel approaches provided by our generous community.
+* [Polly-Samples](https://github.com/App-vNext/Polly-Samples) contains practical examples for using various implementations of Polly. Please feel free to contribute to the Polly-Samples repository in order to assist others who are either learning Polly for the first time, or are seeking advanced examples and novel approaches provided by our generous community.
+
+* Microsoft's [eShopOnContainers project](https://github.com/dotnet-architecture/eShopOnContainers) is a sample project demonstrating a .NET Microservices architecture and using Polly for resilience
 
 # Instructions for Contributing
 
-Please check out our [Wiki](https://github.com/App-vNext/Polly/wiki/Git-Workflow) for contributing guidelines. We are following the excellent GitHub Flow process, and would like to make sure you have all of the information needed to be a world-class contributor!
+Please be sure to branch from the head of the latest vX.Y.Z dev branch (rather than master) when developing contributions.  
+
+For github workflow, check out our [Wiki](https://github.com/App-vNext/Polly/wiki/Git-Workflow). We are following the excellent GitHub Flow process, and would like to make sure you have all of the information needed to be a world-class contributor!
 
 Since Polly is part of the .NET Foundation, we ask our contributors to abide by their [Code of Conduct](https://www.dotnetfoundation.org/code-of-conduct).  To contribute (beyond trivial typo corrections), review and sign the [.Net Foundation Contributor License Agreement](https://cla.dotnetfoundation.org/). This ensures the community is free to use your contributions.  The registration process can be completed entirely online.
 
@@ -1005,32 +1036,88 @@ Also, we've stood up a [Slack](http://www.pollytalk.org) channel for easier real
 
 Licensed under the terms of the [New BSD License](http://opensource.org/licenses/BSD-3-Clause)
 
-# Blog posts, podcasts and videos about Polly
+# Simmy
+
+[Simmy](https://github.com/Polly-Contrib/Simmy) is a major new companion project adding a chaos-engineering and fault-injection dimension to Polly, through the provision of policies to selectively inject faults or latency.  
+
+Head over to the [Simmy](https://github.com/Polly-Contrib/Simmy) repo to find out more.
+
+# Custom policies
+
+From Polly v7.0 it is possible to [create your own custom policies](http://www.thepollyproject.org/2019/02/13/introducing-custom-polly-policies-and-polly-contrib-custom-policies-part-i/) outside Polly.  These custom policies can integrate in to all the existing goodness from Polly: the `Policy.Handle<>()` syntax; PolicyWrap; all the execution-dispatch overloads.
+
+For more info see our blog series:
+
++ [Part I: Introducing custom Polly policies and the Polly.Contrib](http://www.thepollyproject.org/2019/02/13/introducing-custom-polly-policies-and-polly-contrib-custom-policies-part-i/)
++ [Part II: Authoring a non-reactive custom policy](http://www.thepollyproject.org/2019/02/13/authoring-a-proactive-polly-policy-custom-policies-part-ii/) (a policy which acts on all executions)
++ [Part III: Authoring a reactive custom policy](http://www.thepollyproject.org/2019/02/13/authoring-a-reactive-polly-policy-custom-policies-part-iii-2/) (a policy which react to faults).
++ [Part IV: Custom policies for all execution types](http://www.thepollyproject.org/2019/02/13/custom-policies-for-all-execution-types-custom-policies-part-iv/): sync and async, generic and non-generic.
+
+We provide a [starter template for a custom policy](https://github.com/Polly-Contrib/Polly.Contrib.CustomPolicyTemplates) for developing your own custom policy. 
+
+# Polly-Contrib
+
+Polly now has a [Polly-Contrib](https://github.com/Polly-Contrib) to allow the community to contribute policies or other enhancements around Polly with a low burden of ceremony.
+
+Have a contrib you'd like to publish under Polly-Contrib? Contact us with  an issue here or on [Polly slack](http://pollytalk.slack.com), and we can set up a Polly.Contrib repo to which you have full rights, to help you manage and deliver your awesomeness to the community!
+
+We also provide:
+
++ a blank [starter template for a custom policy](https://github.com/Polly-Contrib/Polly.Contrib.CustomPolicyTemplates) (see above for more on custom policies)
++ a [template repo for any other contrib](https://github.com/Polly-Contrib/Polly.Contrib.BlankTemplate)
+
+Both templates contain a full project structure referencing Polly, Polly's default build targets, and a build to build and test your contrib and make a nuget package.
+
+## Available via Polly-Contrib
+
++ [Polly.Contrib.TimingPolicy](https://github.com/Polly-Contrib/Polly.Contrib.TimingPolicy): a starter policy to publish execution timings of any call executed through Policy.
++ [Polly.Contrib.LoggingPolicy](https://github.com/Polly-Contrib/Polly.Contrib.LoggingPolicy): a policy simply to log handled exceptions/faults, and rethrow or bubble the fault outwards.
+
+# Blogs, podcasts, courses, ebooks, architecture samples and videos around Polly
 
 When we discover an interesting write-up on Polly, we'll add it to this list. If you have a blog post you'd like to share, please submit a PR!
 
 ## Blog posts
 
-* [Resilient network connectivity in Xamarin Forms](https://xamarinhelp.com/resilient-network-connectivity-xamarin-forms/) by [Adam Pedley](http://xamarinhelp.com/contact/).
+* [Adding resilience and Transient Fault handling to your .NET Core HttpClient with Polly](https://www.hanselman.com/blog/AddingResilienceAndTransientFaultHandlingToYourNETCoreHttpClientWithPolly.aspx) - by [Scott Hanselman](https://www.hanselman.com/about/) 
+* [Reliable Event Processing in Azure Functions](https://hackernoon.com/reliable-event-processing-in-azure-functions-37054dc2d0fc) - by [Jeff Hollan](https://hackernoon.com/@jeffhollan)
+* [Optimally configuring ASPNET Core HttpClientFactory](https://rehansaeed.com/optimally-configuring-asp-net-core-httpclientfactory/) including with Polly policies - by [Muhammad Rehan Saeed](https://twitter.com/RehanSaeedUK/)
+* [Integrating HttpClientFactory with Polly for transient fault handling](https://www.stevejgordon.co.uk/httpclientfactory-using-polly-for-transient-fault-handling) - by [Steve Gordon](https://www.stevejgordon.co.uk/)
+* [Resilient network connectivity in Xamarin Forms](https://xamarinhelp.com/resilient-network-connectivity-xamarin-forms/) - by [Adam Pedley](http://xamarinhelp.com/contact/)
 * [Policy recommendations for Azure Cognitive Services](http://www.thepollyproject.org/2018/03/06/policy-recommendations-for-azure-cognitive-services/) - by [Joel Hulen](http://www.thepollyproject.org/author/joel/)
 * [Using Polly with F# async workflows](http://blog.ploeh.dk/2017/05/30/using-polly-with-f-async-workflows/) - by [Mark Seemann](http://blog.ploeh.dk/about/)
+* [Building resilient applications with Polly](http://elvanydev.com/resilience-with-polly/) (with focus on Azure SQL transient errors) - by [Geovanny Alzate Sandoval](https://github.com/vany0114)
 * [Azure SQL transient errors](https://hackernoon.com/azure-sql-transient-errors-7625ad6e0a06) - by [Mattias Karlsson](https://hackernoon.com/@devlead)
 * [Polly series on No Dogma blog](http://nodogmablog.bryanhogan.net/tag/polly/) - by [Bryan Hogan](https://twitter.com/bryanjhogan)
 * [Polly 5.0 - a wider resilience framework!](http://www.thepollyproject.org/2016/10/25/polly-5-0-a-wider-resilience-framework/) - by [Dylan Reisenberger](http://www.thepollyproject.org/author/dylan/)
 * [Implementing the retry pattern in c sharp using Polly](https://alastaircrabtree.com/implementing-the-retry-pattern-using-polly/) - by [Alastair Crabtree](https://alastaircrabtree.com/about/)
 * [NuGet Package of the Week: Polly wanna fluently express transient exception handling policies in .NET?](https://www.hanselman.com/blog/NuGetPackageOfTheWeekPollyWannaFluentlyExpressTransientExceptionHandlingPoliciesInNET.aspx) - by [Scott Hanselman](https://www.hanselman.com/about/)
-* [Circuit Breaking with Polly](http://blog.jaywayco.co.uk/circuit-breaking-with-polly/) - by [J. Conway](http://blog.jaywayco.co.uk/sample-page/)
 * [Exception handling policies with Polly](http://putridparrot.com/blog/exception-handling-policies-with-polly/) - by [Mark Timmings](http://putridparrot.com/blog/about/)
 * [When you use the Polly circuit-breaker, make sure you share your Policy instances!](https://andrewlock.net/when-you-use-the-polly-circuit-breaker-make-sure-you-share-your-policy-instances-2/) - by [Andrew Lock](https://andrewlock.net/about/)
 * [Polly is Repetitive, and I love it!](http://www.appvnext.com/blog/2015/11/19/polly-is-repetitive-and-i-love-it) - by [Joel Hulen](http://www.thepollyproject.org/author/joel/)
+* [Using the Context to Obtain the Retry Count for Diagnostics](https://www.stevejgordon.co.uk/polly-using-context-to-obtain-retry-count-diagnostics) - by [Steve Gordon](https://twitter.com/stevejgordon)
+* [Passing an ILogger to Polly Policies](https://www.stevejgordon.co.uk/passing-an-ilogger-to-polly-policies) - by [Steve Gordon](https://twitter.com/stevejgordon)
+* [Using Polly and Flurl to improve your website](https://jeremylindsayni.wordpress.com/2019/01/01/using-polly-and-flurl-to-improve-your-website/) - by Jeremy Lindsay.
 
 ## Podcasts
 
-* [Dylan Reisenberger](https://twitter.com/softwarereisen) sits down virtually with [Bryan Hogan](https://twitter.com/bryanjhogan) of [NoDogmaBlog](http://nodogmablog.bryanhogan.net/) for an [Introduction to Polly podcast](http://nodogmapodcast.bryanhogan.net/71-dylan-reisenberger-the-polly-project/).  Why do I need Polly?  History of the Polly project.  What do we mean by resilience and transient faults?  How retry and circuit-breaker help.  Exponential backoff.  Stability patterns.  Bulkhead isolation.  Future directions (as at April 2017).
+* June 2018: [DotNetRocks features Polly](https://www.dotnetrocks.com/?show=1556) as [Carl Franklin](https://twitter.com/carlfranklin) and [Richard Campbell](https://twitter.com/richcampbell) chat with [Dylan Reisenberger](https://twitter.com/softwarereisen) about policy patterns, and the new ASP NET Core 2.1 integration with IHttpClientFactory.  
+
+* April 2017: [Dylan Reisenberger](https://twitter.com/softwarereisen) sits down virtually with [Bryan Hogan](https://twitter.com/bryanjhogan) of [NoDogmaBlog](http://nodogmablog.bryanhogan.net/) for an [Introduction to Polly podcast](http://nodogmapodcast.bryanhogan.net/71-dylan-reisenberger-the-polly-project/).  Why do I need Polly?  History of the Polly project.  What do we mean by resilience and transient faults?  How retry and circuit-breaker help.  Exponential backoff.  Stability patterns.  Bulkhead isolation.  Future directions (as at April 2017).
 
 ## PluralSight course
 
-* [Bryan Hogan](https://twitter.com/bryanjhogan) of the [NoDogmaBlog](http://nodogmablog.bryanhogan.net/) has authored a [PluralSight course on Polly](https://www.pluralsight.com/courses/polly-fault-tolerant-web-service-requests).  The course takes you through all the major features of Polly as at v5.6.1.  The course examples are based around using Polly for fault tolerance when calling remote web services, but the principles and techniques are applicable to any context in which Polly may be used.
+* [Bryan Hogan](https://twitter.com/bryanjhogan) of the [NoDogmaBlog](http://nodogmablog.bryanhogan.net/) has authored a [PluralSight course on Polly](https://www.pluralsight.com/courses/polly-fault-tolerant-web-service-requests).  The course takes you through all the major features of Polly, with an additional module added in the fall of 2018 on Http Client Factory.  The course examples are based around using Polly for fault tolerance when calling remote web services, but the principles and techniques are applicable to any context in which Polly may be used.
+
+## Sample microservices architecture and ebook
+
+### Sample microservices architecture
+
+* [Cesar de la Torre](https://github.com/CESARDELATORRE) produced the Microsoft [eShopOnContainers project](https://github.com/dotnet-architecture/eShopOnContainers), a sample project demonstrating a .NET Microservices architecture. The project uses Polly retry and circuit-breaker policies for resilience in calls to microservices, and in establishing connections to transports such as RabbitMQ.  
+
+### ebook
+
+* Accompanying the project is a [.Net Microservices Architecture ebook](https://www.microsoft.com/net/download/thank-you/microservices-architecture-ebook) with an extensive section (section 8) on using Polly for resilience, to which [Dylan Reisenberger](https://twitter.com/softwarereisen) contributed.  The ebook and code is now (June 2018) updated for using the latest ASP NET Core 2.1 features, [Polly with IHttpClientFactory](https://github.com/App-vNext/Polly/wiki/Polly-and-HttpClientFactory).
 
 ## Twitter
 
@@ -1038,6 +1125,8 @@ When we discover an interesting write-up on Polly, we'll add it to this list. If
 
 ## Videos
 
+* [Robust Applications with Polly, the .NET Resilience Framework](https://www.infoq.com/presentations/polly), Bryan Hogan introduces Polly and explains how to use it to build a fault tolerant application.
 * From MVP [Houssem Dellai](https://github.com/HoussemDellai), a [youtube video on How to use Polly with Xamarin Apps](https://www.youtube.com/watch?v=7vsN0RkFN_E), covering wait-and-retry and discussing circuit-breaker policy with a demonstration in Xamarin Forms.  Here is the [source code](https://github.com/HoussemDellai/ResilientHttpClient) of the application demonstrated in the video.  Draws on the [`ResilientHttpClient`](https://github.com/dotnet-architecture/eShopOnContainers/blob/dev/src/BuildingBlocks/Resilience/Resilience.Http/ResilientHttpClient.cs) from Microsoft's [eShopOnContainers project](https://github.com/dotnet-architecture/eShopOnContainers).
 * In the video, [.NET Rocks Live with Jon Skeet and Bill Wagner](https://youtu.be/LCj7h7ZoHA8?t=1617), Bill Wagner discusses Polly.
 * Scott Allen discusses Polly during his [Building for Resiliency and Scale in the Cloud](https://youtu.be/SFLu6jZWXGs?t=1440) presentation at NDC.
+* [ASP.NET Community Standup April 24, 2018](https://youtu.be/k0Xy-5zE9to?t=12m22s): Damian Edwards, Jon Galloway and Scott Hanselman discuss Scott Hanselman's blog on [Polly with IHttpClientFactory](https://www.hanselman.com/blog/AddingResilienceAndTransientFaultHandlingToYourNETCoreHttpClientWithPolly.aspx) and the [Polly team documentation on IHttpClientFactory](https://github.com/App-vNext/Polly/wiki/Polly-and-HttpClientFactory). Interesting background discussion also on feature richness and the importance of good documentation. 
